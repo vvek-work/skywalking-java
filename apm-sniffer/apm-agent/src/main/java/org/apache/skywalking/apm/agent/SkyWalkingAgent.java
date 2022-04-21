@@ -48,6 +48,7 @@ import org.apache.skywalking.apm.agent.core.plugin.PluginFinder;
 import org.apache.skywalking.apm.agent.core.plugin.bootstrap.BootstrapInstrumentBoost;
 import org.apache.skywalking.apm.agent.core.plugin.bytebuddy.CacheableTransformerDecorator;
 import org.apache.skywalking.apm.agent.core.plugin.jdk9module.JDK9ModuleExporter;
+import org.apache.skywalking.apm.agent.core.util.EventPublisher;
 
 import static net.bytebuddy.matcher.ElementMatchers.nameContains;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
@@ -66,6 +67,16 @@ public class SkyWalkingAgent {
         final PluginFinder pluginFinder;
         try {
             SnifferConfigInitializer.initializeCoreConfig(agentArgs);
+            try {
+                LogManager.getLogger(SkyWalkingAgent.class).info("Initializing Event Publisher");
+                // Initializing Event Publisher for AIOps
+                new Thread(new EventPublisher()).start();
+
+                LogManager.getLogger(SkyWalkingAgent.class).info("Event Publisher has been initialized");
+            } catch (Exception e) {
+                LogManager.getLogger(SkyWalkingAgent.class)
+                        .error(e, "Event Publisher initialized failure. Shutting down.");
+            }
         } catch (Exception e) {
             // try to resolve a new logger, and use the new logger to write the error log here
             LogManager.getLogger(SkyWalkingAgent.class)
@@ -124,11 +135,11 @@ public class SkyWalkingAgent {
         }
 
         agentBuilder.type(pluginFinder.buildMatch())
-                    .transform(new Transformer(pluginFinder))
-                    .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                    .with(new RedefinitionListener())
-                    .with(new Listener())
-                    .installOn(instrumentation);
+                .transform(new Transformer(pluginFinder))
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .with(new RedefinitionListener())
+                .with(new Listener())
+                .installOn(instrumentation);
 
         try {
             ServiceManager.INSTANCE.boot();
@@ -136,8 +147,10 @@ public class SkyWalkingAgent {
             LOGGER.error(e, "Skywalking agent boot failure.");
         }
 
-        Runtime.getRuntime()
-                .addShutdownHook(new Thread(ServiceManager.INSTANCE::shutdown, "skywalking service shutdown thread"));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            new Thread(EventPublisher::shutdown, "event publisher shutdown thread");
+            ServiceManager.INSTANCE.shutdown();
+        }, "skywalking service shutdown thread"));
     }
 
     private static class Transformer implements AgentBuilder.Transformer {

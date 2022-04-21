@@ -19,42 +19,33 @@
 package org.apache.skywalking.apm.agent.core.conf.dynamic;
 
 import com.google.common.collect.Lists;
-import io.grpc.Channel;
-import java.util.ArrayList;
+import lombok.Getter;
+import org.apache.skywalking.apm.agent.core.boot.BootService;
+import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
+import org.apache.skywalking.apm.agent.core.boot.DefaultNamedThreadFactory;
+import org.apache.skywalking.apm.agent.core.conf.Config;
+import org.apache.skywalking.apm.agent.core.logging.api.ILog;
+import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
+import org.apache.skywalking.apm.network.common.v3.KeyStringValuePair;
+import org.apache.skywalking.apm.network.language.agent.v3.ConfigurationDiscoveryServiceGrpc;
+import org.apache.skywalking.apm.network.trace.component.command.ConfigurationDiscoveryCommand;
+import org.apache.skywalking.apm.util.RunnableWithExceptionProtection;
+import org.apache.skywalking.apm.util.StringUtil;
+
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import org.apache.skywalking.apm.agent.core.boot.BootService;
-import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
-import org.apache.skywalking.apm.agent.core.boot.DefaultNamedThreadFactory;
-import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
-import org.apache.skywalking.apm.agent.core.commands.CommandService;
-import org.apache.skywalking.apm.agent.core.conf.Config;
-import org.apache.skywalking.apm.agent.core.logging.api.ILog;
-import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelListener;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus;
-import org.apache.skywalking.apm.network.language.agent.v3.ConfigurationDiscoveryServiceGrpc;
-import org.apache.skywalking.apm.network.language.agent.v3.ConfigurationSyncRequest;
-import org.apache.skywalking.apm.network.common.v3.Commands;
-import org.apache.skywalking.apm.network.common.v3.KeyStringValuePair;
-import org.apache.skywalking.apm.network.trace.component.command.ConfigurationDiscoveryCommand;
-import org.apache.skywalking.apm.util.RunnableWithExceptionProtection;
-import org.apache.skywalking.apm.util.StringUtil;
-
-import static org.apache.skywalking.apm.agent.core.conf.Config.Collector.GRPC_UPSTREAM_TIMEOUT;
 
 @DefaultImplementor
-public class ConfigurationDiscoveryService implements BootService, GRPCChannelListener {
+public class ConfigurationDiscoveryService implements BootService {
 
     /**
      * UUID of the last return value.
@@ -65,25 +56,12 @@ public class ConfigurationDiscoveryService implements BootService, GRPCChannelLi
     private volatile int lastRegisterWatcherSize;
 
     private volatile ScheduledFuture<?> getDynamicConfigurationFuture;
-    private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
     private volatile ConfigurationDiscoveryServiceGrpc.ConfigurationDiscoveryServiceBlockingStub configurationDiscoveryServiceBlockingStub;
 
     private static final ILog LOGGER = LogManager.getLogger(ConfigurationDiscoveryService.class);
 
     @Override
-    public void statusChanged(final GRPCChannelStatus status) {
-        if (GRPCChannelStatus.CONNECTED.equals(status)) {
-            Channel channel = ServiceManager.INSTANCE.findService(GRPCChannelManager.class).getChannel();
-            configurationDiscoveryServiceBlockingStub = ConfigurationDiscoveryServiceGrpc.newBlockingStub(channel);
-        } else {
-            configurationDiscoveryServiceBlockingStub = null;
-        }
-        this.status = status;
-    }
-
-    @Override
     public void prepare() throws Throwable {
-        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).addChannelListener(this);
     }
 
     @Override
@@ -202,36 +180,6 @@ public class ConfigurationDiscoveryService implements BootService, GRPCChannelLi
      * get agent dynamic config through gRPC.
      */
     private void getAgentDynamicConfig() {
-        LOGGER.debug("ConfigurationDiscoveryService running, status:{}.", status);
-
-        if (GRPCChannelStatus.CONNECTED.equals(status)) {
-            try {
-                ConfigurationSyncRequest.Builder builder = ConfigurationSyncRequest.newBuilder();
-                builder.setService(Config.Agent.SERVICE_NAME);
-
-                // Some plugin will register watcher later.
-                final int size = register.keys().size();
-                if (lastRegisterWatcherSize != size) {
-                    // reset uuid, avoid the same uuid causing the configuration not to be updated.
-                    uuid = null;
-                    lastRegisterWatcherSize = size;
-                }
-
-                if (null != uuid) {
-                    builder.setUuid(uuid);
-                }
-
-                if (configurationDiscoveryServiceBlockingStub != null) {
-                    final Commands commands = configurationDiscoveryServiceBlockingStub.withDeadlineAfter(
-                        GRPC_UPSTREAM_TIMEOUT, TimeUnit.SECONDS
-                    ).fetchConfigurations(builder.build());
-                    ServiceManager.INSTANCE.findService(CommandService.class).receiveCommand(commands);
-                }
-            } catch (Throwable t) {
-                LOGGER.error(t, "ConfigurationDiscoveryService execute fail.");
-                ServiceManager.INSTANCE.findService(GRPCChannelManager.class).reportError(t);
-            }
-        }
     }
 
     /**

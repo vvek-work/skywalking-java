@@ -16,10 +16,21 @@
  *
  */
 
-package org.apache.skywalking.apm.agent.core.remote;
+package org.apache.skywalking.apm.agent.core.util;
 
-import io.grpc.Channel;
+import org.junit.Test;
 
-public interface ChannelDecorator {
-    Channel build(Channel channel);
+public class EventPublisherTest {
+
+    @Test
+    public void testEventPublish() throws InterruptedException {
+        new Thread(new EventPublisher()).start();
+
+        int i = 0;
+
+        while (true) {
+            Thread.sleep(1000);
+            EventPublisher.queue("Hello " + i++);
+        }
+    }
 }

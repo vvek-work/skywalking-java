@@ -27,7 +27,6 @@
     <packaging>pom</packaging>
     <modules>
         <module>apm-toolkit-kafka-activation</module>
-        <module>apm-toolkit-log4j-1.x-activation</module>
         <module>apm-toolkit-log4j-2.x-activation</module>
         <module>apm-toolkit-logback-1.x-activation</module>
         <module>apm-toolkit-opentracing-activation</module>

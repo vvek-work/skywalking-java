@@ -18,26 +18,21 @@
 
 package org.apache.skywalking.apm.agent.core.meter;
 
-import io.grpc.Channel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
-import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelListener;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus;
-import org.apache.skywalking.apm.agent.core.remote.GRPCStreamServiceStatus;
 import org.apache.skywalking.apm.network.common.v3.Commands;
 import org.apache.skywalking.apm.network.language.agent.v3.MeterData;
 import org.apache.skywalking.apm.network.language.agent.v3.MeterReportServiceGrpc;
+
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.apache.skywalking.apm.agent.core.conf.Config.Collector.GRPC_UPSTREAM_TIMEOUT;
 
@@ -45,15 +40,13 @@ import static org.apache.skywalking.apm.agent.core.conf.Config.Collector.GRPC_UP
  * MeterSender collects the values of registered meter instances, and sends to the backend.
  */
 @DefaultImplementor
-public class MeterSender implements BootService, GRPCChannelListener {
+public class MeterSender implements BootService {
     private static final ILog LOGGER = LogManager.getLogger(MeterSender.class);
 
-    private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
     private volatile MeterReportServiceGrpc.MeterReportServiceStub meterReportServiceStub;
 
     @Override
     public void prepare() {
-        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).addChannelListener(this);
     }
 
     @Override
@@ -62,12 +55,11 @@ public class MeterSender implements BootService, GRPCChannelListener {
     }
 
     public void send(Map<MeterId, BaseMeter> meterMap, MeterService meterService) {
-        if (status == GRPCChannelStatus.CONNECTED) {
+        if (true) {
             StreamObserver<MeterData> reportStreamObserver = null;
-            final GRPCStreamServiceStatus status = new GRPCStreamServiceStatus(false);
             try {
                 reportStreamObserver = meterReportServiceStub.withDeadlineAfter(
-                    GRPC_UPSTREAM_TIMEOUT, TimeUnit.SECONDS
+                        GRPC_UPSTREAM_TIMEOUT, TimeUnit.SECONDS
                 ).collect(new StreamObserver<Commands>() {
                     @Override
                     public void onNext(Commands commands) {
@@ -75,16 +67,15 @@ public class MeterSender implements BootService, GRPCChannelListener {
 
                     @Override
                     public void onError(Throwable throwable) {
-                        status.finished();
+
                         if (LOGGER.isErrorEnable()) {
                             LOGGER.error(throwable, "Send meters to collector fail with a grpc internal exception.");
                         }
-                        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).reportError(throwable);
                     }
 
                     @Override
                     public void onCompleted() {
-                        status.finished();
+
                     }
                 });
 
@@ -105,7 +96,6 @@ public class MeterSender implements BootService, GRPCChannelListener {
                 if (reportStreamObserver != null) {
                     reportStreamObserver.onCompleted();
                 }
-                status.wait4Finish();
             }
         }
     }
@@ -140,16 +130,5 @@ public class MeterSender implements BootService, GRPCChannelListener {
     @Override
     public void shutdown() {
 
-    }
-
-    @Override
-    public void statusChanged(final GRPCChannelStatus status) {
-        if (GRPCChannelStatus.CONNECTED.equals(status)) {
-            Channel channel = ServiceManager.INSTANCE.findService(GRPCChannelManager.class).getChannel();
-            meterReportServiceStub = MeterReportServiceGrpc.newStub(channel);
-        } else {
-            meterReportServiceStub = null;
-        }
-        this.status = status;
     }
 }

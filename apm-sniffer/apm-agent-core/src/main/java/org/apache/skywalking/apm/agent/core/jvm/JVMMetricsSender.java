@@ -18,10 +18,6 @@
 
 package org.apache.skywalking.apm.agent.core.jvm;
 
-import io.grpc.Channel;
-import java.util.LinkedList;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
@@ -29,21 +25,21 @@ import org.apache.skywalking.apm.agent.core.commands.CommandService;
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelListener;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus;
 import org.apache.skywalking.apm.network.common.v3.Commands;
 import org.apache.skywalking.apm.network.language.agent.v3.JVMMetric;
 import org.apache.skywalking.apm.network.language.agent.v3.JVMMetricCollection;
 import org.apache.skywalking.apm.network.language.agent.v3.JVMMetricReportServiceGrpc;
 
+import java.util.LinkedList;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+
 import static org.apache.skywalking.apm.agent.core.conf.Config.Collector.GRPC_UPSTREAM_TIMEOUT;
 
 @DefaultImplementor
-public class JVMMetricsSender implements BootService, Runnable, GRPCChannelListener {
+public class JVMMetricsSender implements BootService, Runnable {
     private static final ILog LOGGER = LogManager.getLogger(JVMMetricsSender.class);
 
-    private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
     private volatile JVMMetricReportServiceGrpc.JVMMetricReportServiceBlockingStub stub = null;
 
     private LinkedBlockingQueue<JVMMetric> queue;
@@ -51,7 +47,6 @@ public class JVMMetricsSender implements BootService, Runnable, GRPCChannelListe
     @Override
     public void prepare() {
         queue = new LinkedBlockingQueue<>(Config.Jvm.BUFFER_SIZE);
-        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).addChannelListener(this);
     }
 
     @Override
@@ -69,7 +64,7 @@ public class JVMMetricsSender implements BootService, Runnable, GRPCChannelListe
 
     @Override
     public void run() {
-        if (status == GRPCChannelStatus.CONNECTED) {
+        if (true) {
             try {
                 JVMMetricCollection.Builder builder = JVMMetricCollection.newBuilder();
                 LinkedList<JVMMetric> buffer = new LinkedList<>();
@@ -84,18 +79,8 @@ public class JVMMetricsSender implements BootService, Runnable, GRPCChannelListe
                 }
             } catch (Throwable t) {
                 LOGGER.error(t, "send JVM metrics to Collector fail.");
-                ServiceManager.INSTANCE.findService(GRPCChannelManager.class).reportError(t);
             }
         }
-    }
-
-    @Override
-    public void statusChanged(GRPCChannelStatus status) {
-        if (GRPCChannelStatus.CONNECTED.equals(status)) {
-            Channel channel = ServiceManager.INSTANCE.findService(GRPCChannelManager.class).getChannel();
-            stub = JVMMetricReportServiceGrpc.newBlockingStub(channel);
-        }
-        this.status = status;
     }
 
     @Override

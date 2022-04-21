@@ -18,7 +18,6 @@
 
 package org.apache.skywalking.apm.agent.core.context;
 
-import java.util.Arrays;
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
@@ -26,18 +25,15 @@ import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.conf.dynamic.ConfigurationDiscoveryService;
 import org.apache.skywalking.apm.agent.core.conf.dynamic.watcher.IgnoreSuffixPatternsWatcher;
 import org.apache.skywalking.apm.agent.core.conf.dynamic.watcher.SpanLimitWatcher;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelListener;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus;
 import org.apache.skywalking.apm.agent.core.sampling.SamplingService;
 import org.apache.skywalking.apm.util.StringUtil;
 
+import java.util.Arrays;
+
 @DefaultImplementor
-public class ContextManagerExtendService implements BootService, GRPCChannelListener {
+public class ContextManagerExtendService implements BootService {
 
     private volatile String[] ignoreSuffixArray = new String[0];
-
-    private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
 
     private IgnoreSuffixPatternsWatcher ignoreSuffixPatternsWatcher;
 
@@ -45,7 +41,6 @@ public class ContextManagerExtendService implements BootService, GRPCChannelList
 
     @Override
     public void prepare() {
-        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).addChannelListener(this);
     }
 
     @Override
@@ -77,9 +72,6 @@ public class ContextManagerExtendService implements BootService, GRPCChannelList
         /*
          * Don't trace anything if the backend is not available.
          */
-        if (!Config.Agent.KEEP_TRACING && GRPCChannelStatus.DISCONNECT.equals(status)) {
-            return new IgnoredTracerContext();
-        }
 
         int suffixIdx = operationName.lastIndexOf(".");
         if (suffixIdx > -1 && Arrays.stream(ignoreSuffixArray)
@@ -95,11 +87,6 @@ public class ContextManagerExtendService implements BootService, GRPCChannelList
         }
 
         return context;
-    }
-
-    @Override
-    public void statusChanged(final GRPCChannelStatus status) {
-        this.status = status;
     }
 
     public void handleIgnoreSuffixPatternsChanged() {

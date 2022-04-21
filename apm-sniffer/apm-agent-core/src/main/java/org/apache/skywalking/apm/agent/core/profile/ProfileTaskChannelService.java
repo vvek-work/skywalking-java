@@ -18,7 +18,6 @@
 
 package org.apache.skywalking.apm.agent.core.profile;
 
-import io.grpc.Channel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.ArrayList;
@@ -36,9 +35,6 @@ import org.apache.skywalking.apm.agent.core.commands.CommandService;
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelListener;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelManager;
-import org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus;
 import org.apache.skywalking.apm.network.common.v3.Commands;
 import org.apache.skywalking.apm.network.language.profile.v3.ProfileTaskCommandQuery;
 import org.apache.skywalking.apm.network.language.profile.v3.ProfileTaskFinishReport;
@@ -54,11 +50,10 @@ import static org.apache.skywalking.apm.agent.core.conf.Config.Collector.GRPC_UP
  * will send task finish status to backend
  */
 @DefaultImplementor
-public class ProfileTaskChannelService implements BootService, Runnable, GRPCChannelListener {
+public class ProfileTaskChannelService implements BootService, Runnable {
     private static final ILog LOGGER = LogManager.getLogger(ProfileTaskChannelService.class);
 
     // channel status
-    private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
 
     // gRPC stub
     private volatile ProfileTaskGrpc.ProfileTaskBlockingStub profileTaskBlockingStub;
@@ -76,7 +71,7 @@ public class ProfileTaskChannelService implements BootService, Runnable, GRPCCha
 
     @Override
     public void run() {
-        if (status == GRPCChannelStatus.CONNECTED) {
+        if (true) {
             try {
                 ProfileTaskCommandQuery.Builder builder = ProfileTaskCommandQuery.newBuilder();
 
@@ -114,7 +109,6 @@ public class ProfileTaskChannelService implements BootService, Runnable, GRPCCha
 
     @Override
     public void prepare() {
-        ServiceManager.INSTANCE.findService(GRPCChannelManager.class).addChannelListener(this);
     }
 
     @Override
@@ -162,17 +156,6 @@ public class ProfileTaskChannelService implements BootService, Runnable, GRPCCha
         if (sendSnapshotFuture != null) {
             sendSnapshotFuture.cancel(true);
         }
-    }
-
-    @Override
-    public void statusChanged(GRPCChannelStatus status) {
-        if (GRPCChannelStatus.CONNECTED.equals(status)) {
-            Channel channel = ServiceManager.INSTANCE.findService(GRPCChannelManager.class).getChannel();
-            profileTaskBlockingStub = ProfileTaskGrpc.newBlockingStub(channel);
-        } else {
-            profileTaskBlockingStub = null;
-        }
-        this.status = status;
     }
 
     /**
